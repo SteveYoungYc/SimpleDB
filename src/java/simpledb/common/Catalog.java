@@ -24,15 +24,20 @@ import java.util.concurrent.ConcurrentHashMap;
 public class Catalog {
 
     public class Table {
-        private DbFile file;
-        private String name;
-        private String pkeyField;
+        public DbFile file;
+        public String name;
+        public String pkeyField;
 
         public Table(DbFile file, String name, String pkeyField) {
             this.file = file;
             this.name = name;
             this.pkeyField = pkeyField;
         }
+
+        public String toString(){
+            return name + "(" + file.getId() + ":" + pkeyField +")";
+        }
+
     }
 
     HashMap<Integer, Table> tables;
@@ -125,7 +130,7 @@ public class Catalog {
 
     public Iterator<Integer> tableIdIterator() {
         // some code goes here
-        return null;
+        return tables.keySet().iterator();
     }
 
     public String getTableName(int id) {

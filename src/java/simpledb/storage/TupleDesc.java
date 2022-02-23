@@ -235,6 +235,11 @@ public class TupleDesc implements Serializable {
      */
     public String toString() {
         // some code goes here
-        return "";
+        StringBuilder s = new StringBuilder();
+        for (TDItem idItem : idItems) {
+            s.append(idItem.toString());
+            s.append(',');
+        }
+        return s.toString();
     }
 }

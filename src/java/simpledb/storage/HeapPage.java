@@ -306,7 +306,7 @@ public class HeapPage implements Page {
      */
     public boolean isSlotUsed(int i) {
         // some code goes here
-        byte b =  header[i / 8];
+        byte b = header[i / 8];
         return ((b >> (i % 8)) & 0x1) == 0x1;
         // return false;
     }
@@ -327,12 +327,12 @@ public class HeapPage implements Page {
         // some code goes here
         return new Iterator<>() {
             private int cursor = -1;
+            private int detector = 0;
 
             @Override
             public boolean hasNext() {
-                for (int detector = cursor + 1; detector < numSlots; detector++) {
+                for (detector = cursor + 1; detector < numSlots; detector++) {
                     if (tuples[detector] != null) {
-                        cursor = detector;
                         return true;
                     }
                 }
@@ -341,6 +341,7 @@ public class HeapPage implements Page {
 
             @Override
             public Tuple next() {
+                cursor = detector;
                 return tuples[cursor];
             }
         };
