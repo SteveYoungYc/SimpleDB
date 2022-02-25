@@ -138,18 +138,21 @@ public class HeapFile implements DbFile {
             private HeapPage nextPage;
             private int pgNo;
             private PageId pageId;
-            private final int numPages = numPages();
+            private int numPages;
             private Iterator<Tuple> it;
+            private boolean switchPage;
 
             @Override
             public void open() throws DbException, TransactionAbortedException {
                 pgNo = 0;
                 pageId = new HeapPageId(getId(), pgNo);
+                numPages = numPages();
                 currPage = (HeapPage) Database.getBufferPool().getPage(tid, pageId, Permissions.READ_ONLY);
                 if (currPage == null) {
                     throw new DbException("No page");
                 }
                 it = currPage.iterator();
+                switchPage = false;
             }
 
             @Override
@@ -164,13 +167,10 @@ public class HeapFile implements DbFile {
                     return true;
                 } else if (pgNo + 1 < numPages) {
                     pageId = new HeapPageId(getId(), pgNo + 1);
-                    nextPage = (HeapPage) Database.getBufferPool().getPage(tid, pageId, Permissions.READ_ONLY);
-                    if (nextPage != null && nextPage.iterator().hasNext()) {
-                        it = nextPage.iterator();
-                        return true;
-                    } else {
-                        return false;
-                    }
+                    nextPage = (HeapPage) Database.getBufferPool().getPage(tid, pageId, Permissions.READ_WRITE);
+                    it = nextPage.iterator();
+                    switchPage = true;
+                    return it.hasNext();
                 } else {
                     return false;
                 }
@@ -181,9 +181,10 @@ public class HeapFile implements DbFile {
                 if (currPage == null || it == null) {
                     throw new NoSuchElementException();
                 }
-                if (!it.hasNext()) {
+                if (switchPage) {
                     pgNo++;
                     currPage = nextPage;
+                    switchPage = false;
                 }
                 return it.next();
             }
