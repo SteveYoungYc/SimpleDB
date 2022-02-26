@@ -1,5 +1,6 @@
 package simpledb.execution;
 
+import simpledb.storage.Field;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.common.DbException;
 import simpledb.storage.Tuple;
@@ -13,6 +14,12 @@ import java.util.*;
 public class Join extends Operator {
 
     private static final long serialVersionUID = 1L;
+    private final JoinPredicate p;
+    private final OpIterator child1;
+    private final OpIterator child2;
+    private OpIterator[] children;
+    private Tuple tuple1;
+    private boolean switchFlag;
 
     /**
      * Constructor. Accepts two children to join and the predicate to join them
@@ -27,11 +34,17 @@ public class Join extends Operator {
      */
     public Join(JoinPredicate p, OpIterator child1, OpIterator child2) {
         // some code goes here
+        this.p = p;
+        this.child1 = child1;
+        this.child2 = child2;
+        this.children = new OpIterator[2];
+        children[0] = child1;
+        children[1] = child2;
     }
 
     public JoinPredicate getJoinPredicate() {
         // some code goes here
-        return null;
+        return p;
     }
 
     /**
@@ -60,20 +73,29 @@ public class Join extends Operator {
      */
     public TupleDesc getTupleDesc() {
         // some code goes here
-        return null;
+        return TupleDesc.merge(child1.getTupleDesc(), child2.getTupleDesc());
     }
 
     public void open() throws DbException, NoSuchElementException,
             TransactionAbortedException {
         // some code goes here
+        super.open();
+        child1.open();
+        child2.open();
+        switchFlag = true;
     }
 
     public void close() {
         // some code goes here
+        super.close();
+        child1.close();
+        child2.close();
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
         // some code goes here
+        child1.rewind();
+        child2.rewind();
     }
 
     /**
@@ -96,18 +118,45 @@ public class Join extends Operator {
      */
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
         // some code goes here
+        // It is possible that child1 doesn't have next but child2 dose.
+        while (child1.hasNext() || (!child1.hasNext() && child2.hasNext())) {
+            if (switchFlag) {
+                tuple1 = child1.next();
+                child2.rewind();
+                switchFlag = false;
+            }
+            while (child2.hasNext()) {
+                int i, j;
+                Tuple tuple2 = child2.next();
+                if (p.filter(tuple1, tuple2)) {
+                    Tuple tuple = new Tuple(getTupleDesc());
+                    for (i = 0; i < tuple1.getTupleDesc().numFields(); i++) {
+                        tuple.setField(i, tuple1.getField(i));
+                    }
+                    for (j = i; j < getTupleDesc().numFields(); j++) {
+                        tuple.setField(j, tuple2.getField(j - i));
+                    }
+                    if (!child2.hasNext()) {
+                        switchFlag = true;
+                    }
+                    return tuple;
+                }
+            }
+            switchFlag = true;
+        }
         return null;
     }
 
     @Override
     public OpIterator[] getChildren() {
         // some code goes here
-        return null;
+        return children;
     }
 
     @Override
     public void setChildren(OpIterator[] children) {
         // some code goes here
+        this.children = children;
     }
 
 }
