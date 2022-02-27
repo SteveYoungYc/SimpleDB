@@ -1,7 +1,15 @@
 package simpledb.execution;
 
+import simpledb.common.DbException;
 import simpledb.common.Type;
+import simpledb.storage.IntField;
 import simpledb.storage.Tuple;
+import simpledb.storage.TupleDesc;
+import simpledb.transaction.TransactionAbortedException;
+
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
 
 /**
  * Knows how to compute some aggregate over a set of IntFields.
@@ -9,6 +17,14 @@ import simpledb.storage.Tuple;
 public class IntegerAggregator implements Aggregator {
 
     private static final long serialVersionUID = 1L;
+    private final int gbfield;
+    private final Type gbfieldtype;
+    private final int afield;
+    private final Op op;
+    private TupleDesc td;
+    private final Type[] types;
+    private final HashMap<Integer, Tuple> tuples;
+    private final HashMap<Integer, Integer> counts;
 
     /**
      * Aggregate constructor
@@ -27,6 +43,13 @@ public class IntegerAggregator implements Aggregator {
 
     public IntegerAggregator(int gbfield, Type gbfieldtype, int afield, Op what) {
         // some code goes here
+        this.gbfield = gbfield;
+        this.gbfieldtype = gbfieldtype;
+        this.afield = afield;
+        this.op = what;
+        this.types = new Type[2];
+        this.tuples = new HashMap<>();
+        this.counts = new HashMap<>();
     }
 
     /**
@@ -38,6 +61,60 @@ public class IntegerAggregator implements Aggregator {
      */
     public void mergeTupleIntoGroup(Tuple tup) {
         // some code goes here
+        Tuple tuple;
+        IntField aggField = (IntField) tup.getField(afield);
+        types[0] = gbfieldtype;
+        types[1] = aggField.getType();
+        td = new TupleDesc(types);
+        int key = tup.getField(gbfield).hashCode();
+        int val = aggField.getValue();
+
+        if (op == Op.SUM) {
+            if (tuples.containsKey(key)) {
+                tuple = tuples.get(key);
+                aggField = new IntField(val + ((IntField) tuple.getField(1)).getValue());
+                tuple.setField(1, aggField);
+            } else {
+                tuples.put(key, tup);
+            }
+        }
+
+        if (op == Op.AVG) {
+            if (tuples.containsKey(key)) {
+                int count = counts.get(key);
+                counts.replace(key, count, count + 1);
+                tuple = tuples.get(key);
+                aggField = new IntField((val + ((IntField) tuple.getField(1)).getValue() * count) / (count + 1));
+                tuple.setField(1, aggField);
+            } else {
+                tuples.put(key, tup);
+                counts.put(key, 1);
+            }
+        }
+
+        if (op == Op.MIN) {
+            if (tuples.containsKey(key)) {
+                tuple = tuples.get(key);
+                if (val < ((IntField) tuple.getField(1)).getValue()) {
+                    aggField = new IntField(val);
+                    tuple.setField(1, aggField);
+                }
+            } else {
+                tuples.put(key, tup);
+            }
+        }
+
+        if (op == Op.MAX) {
+            if (tuples.containsKey(key)) {
+                tuple = tuples.get(key);
+                if (val > ((IntField) tuple.getField(1)).getValue()) {
+                    aggField = new IntField(val);
+                    tuple.setField(1, aggField);
+                }
+            } else {
+                tuples.put(key, tup);
+            }
+        }
     }
 
     /**
@@ -50,8 +127,40 @@ public class IntegerAggregator implements Aggregator {
      */
     public OpIterator iterator() {
         // some code goes here
-        throw new
-        UnsupportedOperationException("please implement me for lab2");
+        return new OpIterator() {
+            private Iterator<Tuple> it;
+
+            @Override
+            public void open() throws DbException, TransactionAbortedException {
+                it = tuples.values().iterator();
+            }
+
+            @Override
+            public boolean hasNext() throws DbException, TransactionAbortedException {
+                return it.hasNext();
+            }
+
+            @Override
+            public Tuple next() throws DbException, TransactionAbortedException, NoSuchElementException {
+                return it.next();
+            }
+
+            @Override
+            public void rewind() throws DbException, TransactionAbortedException {
+                close();
+                open();
+            }
+
+            @Override
+            public TupleDesc getTupleDesc() {
+                return td;
+            }
+
+            @Override
+            public void close() {
+                it = null;
+            }
+        };
     }
 
 }
