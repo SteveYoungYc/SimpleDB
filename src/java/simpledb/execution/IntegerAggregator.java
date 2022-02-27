@@ -31,7 +31,7 @@ public class IntegerAggregator implements Aggregator {
 
     /**
      * Aggregate constructor
-     * 
+     *
      * @param gbfield
      *            the 0-based index of the group-by field in the tuple, or
      *            NO_GROUPING if there is no grouping
@@ -66,7 +66,7 @@ public class IntegerAggregator implements Aggregator {
     /**
      * Merge a new tuple into the aggregate, grouping as indicated in the
      * constructor
-     * 
+     *
      * @param tup
      *            the Tuple containing an aggregate field and a group-by field
      */
@@ -85,38 +85,9 @@ public class IntegerAggregator implements Aggregator {
         td = new TupleDesc(types);
         val = aggField.getValue();
 
-        if (op == Op.COUNT) {
-            if (tuples.containsKey(key)) {
-                tuple = tuples.get(key);
-                aggField = new IntField(1 + ((IntField) tuple.getField(idx)).getValue());
-                tuple.setField(idx, aggField);
-            } else {
-                tuple = new Tuple(td);
-                if (grouping) {
-                    tuple.setField(0, tup.getField(gbfield));
-                }
-                tuple.setField(idx, new IntField(1));
-                tuples.put(key, tuple);
-            }
-        }
-
-        if (op == Op.SUM) {
-            if (tuples.containsKey(key)) {
-                tuple = tuples.get(key);
-                aggField = new IntField(val + ((IntField) tuple.getField(idx)).getValue());
-                tuple.setField(idx, aggField);
-            } else {
-                tuple = new Tuple(td);
-                if (grouping) {
-                    tuple.setField(0, tup.getField(gbfield));
-                }
-                tuple.setField(idx, aggField);
-                tuples.put(key, tuple);
-            }
-        }
-
-        if (op == Op.AVG) {
-            if (tuples.containsKey(key)) {
+        if (tuples.containsKey(key)) {
+            tuple = tuples.get(key);
+            if (op == Op.AVG) {
                 int count = nums.get(key);
                 int sum = sums.get(key);
                 nums.replace(key, count, count + 1);
@@ -124,56 +95,43 @@ public class IntegerAggregator implements Aggregator {
                 tuple = tuples.get(key);
                 aggField = new IntField((sum + val) / (count + 1));
                 tuple.setField(idx, aggField);
-            } else {
-                tuple = new Tuple(td);
-                if (grouping) {
-                    tuple.setField(0, tup.getField(gbfield));
-                }
+            } else if (op == Op.COUNT) {
+                aggField = new IntField(1 + ((IntField) tuple.getField(idx)).getValue());
                 tuple.setField(idx, aggField);
-                tuples.put(key, tuple);
-                nums.put(key, 1);
-                sums.put(key, val);
-            }
-        }
-
-        if (op == Op.MIN) {
-            if (tuples.containsKey(key)) {
-                tuple = tuples.get(key);
+            } else if (op == Op.SUM) {
+                aggField = new IntField(val + ((IntField) tuple.getField(idx)).getValue());
+                tuple.setField(idx, aggField);
+            } else if (op == Op.MIN) {
                 if (val < ((IntField) tuple.getField(idx)).getValue()) {
                     aggField = new IntField(val);
                     tuple.setField(idx, aggField);
                 }
-            } else {
-                tuple = new Tuple(td);
-                if (grouping) {
-                    tuple.setField(0, tup.getField(gbfield));
-                }
-                tuple.setField(idx, aggField);
-                tuples.put(key, tuple);
-            }
-        }
-
-        if (op == Op.MAX) {
-            if (tuples.containsKey(key)) {
-                tuple = tuples.get(key);
+            } else if (op == Op.MAX) {
                 if (val > ((IntField) tuple.getField(idx)).getValue()) {
                     aggField = new IntField(val);
                     tuple.setField(idx, aggField);
                 }
-            } else {
-                tuple = new Tuple(td);
-                if (grouping) {
-                    tuple.setField(0, tup.getField(gbfield));
-                }
+            }
+        } else {
+            tuple = new Tuple(td);
+            if (grouping) {
+                tuple.setField(0, tup.getField(gbfield));
+            }
+            if (op == Op.COUNT)
+                tuple.setField(idx, new IntField(1));
+            else
                 tuple.setField(idx, aggField);
-                tuples.put(key, tuple);
+            tuples.put(key, tuple);
+            if (op == Op.AVG) {
+                nums.put(key, 1);
+                sums.put(key, val);
             }
         }
     }
 
     /**
      * Create a OpIterator over group aggregate results.
-     * 
+     *
      * @return a OpIterator whose tuples are the pair (groupVal, aggregateVal)
      *         if using group, or a single (aggregateVal) if no grouping. The
      *         aggregateVal is determined by the type of aggregate specified in
