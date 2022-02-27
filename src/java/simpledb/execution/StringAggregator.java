@@ -25,6 +25,8 @@ public class StringAggregator implements Aggregator {
     private TupleDesc td;
     private final Type[] types;
     private final HashMap<Integer, Tuple> tuples;
+    private final boolean grouping;
+    private final int idx;
 
     /**
      * Aggregate constructor
@@ -41,7 +43,14 @@ public class StringAggregator implements Aggregator {
         this.gbfieldtype = gbfieldtype;
         this.afield = afield;
         this.op = what;
-        this.types = new Type[2];
+        this.grouping = (gbfield != NO_GROUPING);
+        if (this.grouping) {
+            this.types = new Type[2];
+            idx = 1;
+        } else {
+            this.types = new Type[1];
+            idx = 0;
+        }
         this.tuples = new HashMap<>();
     }
 
@@ -52,21 +61,28 @@ public class StringAggregator implements Aggregator {
     public void mergeTupleIntoGroup(Tuple tup) {
         // some code goes here
         Tuple tuple;
-        IntField groupField = (IntField) tup.getField(gbfield);
-        types[0] = gbfieldtype;
-        types[1] = Type.INT_TYPE;
+        IntField aggField;
+        int key;
+        if (grouping) {
+            types[0] = gbfieldtype;
+            key = tup.getField(gbfield).hashCode();
+        } else {
+            key = 1;
+        }
+        types[idx] = Type.INT_TYPE;
         td = new TupleDesc(types);
-        int key = groupField.hashCode();
 
         if (op == Op.COUNT) {
             if (tuples.containsKey(key)) {
                 tuple = tuples.get(key);
-                int val = ((IntField) tuple.getField(1)).getValue();
-                tuple.setField(1, new IntField(val + 1));
+                aggField = new IntField(1 + ((IntField) tuple.getField(idx)).getValue());
+                tuple.setField(idx, aggField);
             } else {
                 tuple = new Tuple(td);
-                tuple.setField(0, tup.getField(0));
-                tuple.setField(1, new IntField(1));
+                if (grouping) {
+                    tuple.setField(0, tup.getField(gbfield));
+                }
+                tuple.setField(idx, new IntField(1));
                 tuples.put(key, tuple);
             }
         }

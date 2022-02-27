@@ -24,7 +24,10 @@ public class IntegerAggregator implements Aggregator {
     private TupleDesc td;
     private final Type[] types;
     private final HashMap<Integer, Tuple> tuples;
-    private final HashMap<Integer, Integer> counts;
+    private final HashMap<Integer, Integer> sums;
+    private final HashMap<Integer, Integer> nums;
+    private final boolean grouping;
+    private final int idx;
 
     /**
      * Aggregate constructor
@@ -47,9 +50,17 @@ public class IntegerAggregator implements Aggregator {
         this.gbfieldtype = gbfieldtype;
         this.afield = afield;
         this.op = what;
-        this.types = new Type[2];
+        this.grouping = (gbfield != NO_GROUPING);
+        if (this.grouping) {
+            this.types = new Type[2];
+            idx = 1;
+        } else {
+            this.types = new Type[1];
+            idx = 0;
+        }
         this.tuples = new HashMap<>();
-        this.counts = new HashMap<>();
+        this.sums = new HashMap<>();
+        this.nums = new HashMap<>();
     }
 
     /**
@@ -63,56 +74,99 @@ public class IntegerAggregator implements Aggregator {
         // some code goes here
         Tuple tuple;
         IntField aggField = (IntField) tup.getField(afield);
-        types[0] = gbfieldtype;
-        types[1] = aggField.getType();
+        int key, val;
+        if (grouping) {
+            types[0] = gbfieldtype;
+            key = tup.getField(gbfield).hashCode();
+        } else {
+            key = 1;
+        }
+        types[idx] = aggField.getType();
         td = new TupleDesc(types);
-        int key = tup.getField(gbfield).hashCode();
-        int val = aggField.getValue();
+        val = aggField.getValue();
+
+        if (op == Op.COUNT) {
+            if (tuples.containsKey(key)) {
+                tuple = tuples.get(key);
+                aggField = new IntField(1 + ((IntField) tuple.getField(idx)).getValue());
+                tuple.setField(idx, aggField);
+            } else {
+                tuple = new Tuple(td);
+                if (grouping) {
+                    tuple.setField(0, tup.getField(gbfield));
+                }
+                tuple.setField(idx, new IntField(1));
+                tuples.put(key, tuple);
+            }
+        }
 
         if (op == Op.SUM) {
             if (tuples.containsKey(key)) {
                 tuple = tuples.get(key);
-                aggField = new IntField(val + ((IntField) tuple.getField(1)).getValue());
-                tuple.setField(1, aggField);
+                aggField = new IntField(val + ((IntField) tuple.getField(idx)).getValue());
+                tuple.setField(idx, aggField);
             } else {
-                tuples.put(key, tup);
+                tuple = new Tuple(td);
+                if (grouping) {
+                    tuple.setField(0, tup.getField(gbfield));
+                }
+                tuple.setField(idx, aggField);
+                tuples.put(key, tuple);
             }
         }
 
         if (op == Op.AVG) {
             if (tuples.containsKey(key)) {
-                int count = counts.get(key);
-                counts.replace(key, count, count + 1);
+                int count = nums.get(key);
+                int sum = sums.get(key);
+                nums.replace(key, count, count + 1);
+                sums.replace(key, sum, sum + val);
                 tuple = tuples.get(key);
-                aggField = new IntField((val + ((IntField) tuple.getField(1)).getValue() * count) / (count + 1));
-                tuple.setField(1, aggField);
+                aggField = new IntField((sum + val) / (count + 1));
+                tuple.setField(idx, aggField);
             } else {
-                tuples.put(key, tup);
-                counts.put(key, 1);
+                tuple = new Tuple(td);
+                if (grouping) {
+                    tuple.setField(0, tup.getField(gbfield));
+                }
+                tuple.setField(idx, aggField);
+                tuples.put(key, tuple);
+                nums.put(key, 1);
+                sums.put(key, val);
             }
         }
 
         if (op == Op.MIN) {
             if (tuples.containsKey(key)) {
                 tuple = tuples.get(key);
-                if (val < ((IntField) tuple.getField(1)).getValue()) {
+                if (val < ((IntField) tuple.getField(idx)).getValue()) {
                     aggField = new IntField(val);
-                    tuple.setField(1, aggField);
+                    tuple.setField(idx, aggField);
                 }
             } else {
-                tuples.put(key, tup);
+                tuple = new Tuple(td);
+                if (grouping) {
+                    tuple.setField(0, tup.getField(gbfield));
+                }
+                tuple.setField(idx, aggField);
+                tuples.put(key, tuple);
             }
         }
 
         if (op == Op.MAX) {
             if (tuples.containsKey(key)) {
                 tuple = tuples.get(key);
-                if (val > ((IntField) tuple.getField(1)).getValue()) {
+                if (val > ((IntField) tuple.getField(idx)).getValue()) {
                     aggField = new IntField(val);
-                    tuple.setField(1, aggField);
+                    tuple.setField(idx, aggField);
                 }
             } else {
-                tuples.put(key, tup);
+                tuple = new Tuple(td);
+                if (grouping) {
+                    tuple.setField(0, tup.getField(gbfield));
+                }
+                tuple.setField(idx, aggField);
+                tuples.put(key, tuple);
             }
         }
     }

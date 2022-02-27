@@ -25,12 +25,14 @@ public class Aggregate extends Operator {
     private final Aggregator.Op aop;
     private final TupleDesc td;
     private OpIterator it;
+    private boolean grouping;
+    private OpIterator[] children;
 
     /**
      * Constructor.
      * <p>
      * Implementation hint: depending on the type of afield, you will want to
-     * construct an {@link StringAggregator} or {@link StringAggregator} to help
+     * construct an {@link IntegerAggregator} or {@link StringAggregator} to help
      * you with your implementation of readNext().
      *
      * @param child  The OpIterator that is feeding us tuples.
@@ -42,16 +44,23 @@ public class Aggregate extends Operator {
     public Aggregate(OpIterator child, int afield, int gfield, Aggregator.Op aop) {
         // some code goes here
         this.child = child;
+        this.children = new OpIterator[1];
+        children[0] = child;
         this.afield = afield;
         this.gfield = gfield;
         this.aop = aop;
         this.td = child.getTupleDesc();
+        this.grouping = (gfield != -1);
+        Type type;
+        if (grouping) {
+            type = td.getFieldType(gfield);
+        } else {
+            type = Type.INT_TYPE;
+        }
         if (td.getFieldType(afield) == Type.INT_TYPE) {
-            this.aggregator = new IntegerAggregator(gfield, td.getFieldType(gfield), afield, aop);
-            System.out.println("Integer");
+            this.aggregator = new IntegerAggregator(gfield, type, afield, aop);
         } else if (td.getFieldType(afield) == Type.STRING_TYPE) {
-            System.out.println("String");
-            this.aggregator = new StringAggregator(gfield, td.getFieldType(gfield), afield, aop);
+            this.aggregator = new StringAggregator(gfield, type, afield, aop);
         }
     }
 
@@ -72,7 +81,11 @@ public class Aggregate extends Operator {
      */
     public String groupFieldName() {
         // some code goes here
-        return td.getFieldName(gfield);
+        if (grouping) {
+            return td.getFieldName(gfield);
+        } else {
+            return null;
+        }
     }
 
     /**
@@ -149,9 +162,15 @@ public class Aggregate extends Operator {
      */
     public TupleDesc getTupleDesc() {
         // some code goes here
-        Type[] types = new Type[2];
-        types[0] = td.getFieldType(gfield);
-        types[1] = td.getFieldType(afield);
+        Type[] types;
+        if (grouping) {
+            types = new Type[2];
+            types[0] = td.getFieldType(gfield);
+            types[1] = td.getFieldType(afield);
+        } else {
+            types = new Type[1];
+            types[0] = td.getFieldType(afield);
+        }
         return new TupleDesc(types);
     }
 
@@ -164,12 +183,13 @@ public class Aggregate extends Operator {
     @Override
     public OpIterator[] getChildren() {
         // some code goes here
-        return null;
+        return children;
     }
 
     @Override
     public void setChildren(OpIterator[] children) {
         // some code goes here
+        this.children = children;
     }
 
 }
