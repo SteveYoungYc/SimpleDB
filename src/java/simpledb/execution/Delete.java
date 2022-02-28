@@ -42,7 +42,9 @@ public class Delete extends Operator {
 
     public TupleDesc getTupleDesc() {
         // some code goes here
-        return child.getTupleDesc();
+        Type[] types = new Type[1];
+        types[0] = Type.INT_TYPE;
+        return new TupleDesc(types);
     }
 
     public void open() throws DbException, TransactionAbortedException {
