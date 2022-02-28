@@ -98,8 +98,6 @@ public class BufferPool {
             queue.add(pid.hashCode());
         } else {
             page = pages.get(pid.hashCode());
-            queue.remove(pid.hashCode());
-            queue.add(pid.hashCode());
         }
         return page;
     }
