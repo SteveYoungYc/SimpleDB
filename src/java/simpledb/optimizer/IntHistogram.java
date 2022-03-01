@@ -2,9 +2,19 @@ package simpledb.optimizer;
 
 import simpledb.execution.Predicate;
 
+import java.util.HashMap;
+
 /** A class to represent a fixed-width histogram over a single integer-based field.
  */
 public class IntHistogram {
+
+    private final int buckets;
+    private final int min;
+    private final int max;
+    private int sum;
+    private final int bucketLen;
+    // private final HashMap<Integer, Integer> data;
+    private final int[] data;
 
     /**
      * Create a new IntHistogram.
@@ -24,6 +34,12 @@ public class IntHistogram {
      */
     public IntHistogram(int buckets, int min, int max) {
     	// some code goes here
+        this.buckets = buckets;
+        this.min = min;
+        this.max = max;
+        this.sum = 0;
+        this.bucketLen = (int) Math.ceil((double) (max - min + 1) / buckets);
+        this.data = new int[(int) Math.ceil((double) (max - min + 1) / this.bucketLen)];
     }
 
     /**
@@ -32,6 +48,9 @@ public class IntHistogram {
      */
     public void addValue(int v) {
     	// some code goes here
+        int idx = (v - min) / bucketLen;
+        data[idx]++;
+        sum++;
     }
 
     /**
@@ -45,9 +64,47 @@ public class IntHistogram {
      * @return Predicted selectivity of this particular operator and value
      */
     public double estimateSelectivity(Predicate.Op op, int v) {
-
     	// some code goes here
-        return -1.0;
+        double sel = 0;
+        int idx = (v - min) / bucketLen;
+        int subSum = 0;
+        switch (op) {
+            case EQUALS -> {
+                if (idx < 0 || idx >= data.length)
+                    return 0;
+                sel = ((double) data[idx] / bucketLen / sum);
+            }
+            case NOT_EQUALS -> {
+                if (idx < 0 || idx >= data.length)
+                    return 1;
+                sel = (1 - (double) data[idx] / bucketLen / sum);
+            }
+            case LESS_THAN -> {
+                for (int i = 0; i < idx && i < data.length; i++) {
+                    subSum += data[i];
+                }
+                sel = (double)subSum / sum;
+            }
+            case LESS_THAN_OR_EQ -> {
+                for (int i = 0; i <= idx && i < data.length; i++) {
+                    subSum += data[i];
+                }
+                sel = (double)subSum / sum;
+            }
+            case GREATER_THAN -> {
+                for (int i = Math.max(idx + 1, 0); i < data.length; i++) {
+                    subSum += data[i];
+                }
+                sel = (double)subSum / sum;
+            }
+            case GREATER_THAN_OR_EQ -> {
+                for (int i = Math.max(idx, 0); i < data.length; i++) {
+                    subSum += data[i];
+                }
+                sel = (double)subSum / sum;
+            }
+        }
+        return sel;
     }
     
     /**
@@ -58,8 +115,7 @@ public class IntHistogram {
      *     join optimization. It may be needed if you want to
      *     implement a more efficient optimization
      * */
-    public double avgSelectivity()
-    {
+    public double avgSelectivity() {
         // some code goes here
         return 1.0;
     }
