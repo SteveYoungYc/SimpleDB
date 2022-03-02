@@ -130,7 +130,7 @@ public class JoinOptimizer {
             // HINT: You may need to use the variable "j" if you implemented
             // a join algorithm that's more complicated than a basic
             // nested-loops join.
-            return -1.0;
+            return cost1 + card1 * cost2 + card1 * card2;
         }
     }
 
@@ -176,6 +176,17 @@ public class JoinOptimizer {
                                                    Map<String, Integer> tableAliasToId) {
         int card = 1;
         // some code goes here
+        if (joinOp == Predicate.Op.EQUALS || joinOp == Predicate.Op.NOT_EQUALS) {
+            if (t1pkey) {
+                card = card2;
+            } else if(t2pkey) {
+                card = card1;
+            } else{
+                card = Math.max(card1, card2);
+            }
+        } else {
+            card = (int) (0.3 * card1 * card2);
+        }
         return card <= 0 ? 1 : card;
     }
 
@@ -236,9 +247,31 @@ public class JoinOptimizer {
             Map<String, Double> filterSelectivities, boolean explain)
             throws ParsingException {
 
-        // some code goes here
-        //Replace the following
-        return joins;
+        PlanCache planCache = new PlanCache();
+        Set<Set<LogicalJoinNode>> nodeSets = null;
+        for (int i = 0; i < joins.size() + 1; ++i) {
+            nodeSets = enumerateSubsets(joins, i);
+            for (Set<LogicalJoinNode> nodeSet : nodeSets) {
+                double costSoFar = Double.MAX_VALUE;
+                for (LogicalJoinNode node : nodeSet) {
+                    CostCard costCard = computeCostAndCardOfSubplan(stats, filterSelectivities,
+                            node, nodeSet, costSoFar, planCache);
+                    if (costCard == null) continue;
+                    if (costCard.cost < costSoFar) {
+                        costSoFar = costCard.cost;
+                        planCache.addPlan(nodeSet, costSoFar, costCard.card, costCard.plan);
+                    }
+                }
+            }
+        }
+        List<LogicalJoinNode> res = null;
+        for (Set<LogicalJoinNode> nodeSet : nodeSets)
+            res = planCache.getOrder(nodeSet);
+
+        if (explain)
+            printJoins(res, planCache, stats, filterSelectivities);
+
+        return res;
     }
 
     // ===================== Private Methods =================================
