@@ -141,10 +141,9 @@ public class TableStats {
             }
             for (int i = 0; i < td.numFields(); i++) {
                 if (td.getFieldType(i) == Type.INT_TYPE) {
-                    buckets = extremes.get(i).max - extremes.get(i).min + 1;
-                    intGrams.put(i, new IntHistogram(buckets, extremes.get(i).min, extremes.get(i).max));
+                    intGrams.put(i, new IntHistogram(NUM_HIST_BINS, extremes.get(i).min, extremes.get(i).max));
                 } else {
-                    strGrams.put(i, new StringHistogram(10));
+                    strGrams.put(i, new StringHistogram(NUM_HIST_BINS));
                 }
             }
             it.rewind();
@@ -239,7 +238,7 @@ public class TableStats {
      * */
     public int totalTuples() {
         // some code goes here
-        return 0;
+        return tupleNum;
     }
 
 }

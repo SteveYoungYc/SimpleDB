@@ -49,6 +49,9 @@ public class IntHistogram {
     public void addValue(int v) {
     	// some code goes here
         int idx = (v - min) / bucketLen;
+        if (idx < 0 || idx >= data.length) {
+            return;
+        }
         data[idx]++;
         sum++;
     }
@@ -83,25 +86,33 @@ public class IntHistogram {
                 for (int i = 0; i < idx && i < data.length; i++) {
                     subSum += data[i];
                 }
-                sel = (double)subSum / sum;
+                if (idx >= 0 && idx < data.length)
+                    subSum += data[idx] * (double) (v % bucketLen) / bucketLen;
+                sel = (double) subSum / sum;
             }
             case LESS_THAN_OR_EQ -> {
-                for (int i = 0; i <= idx && i < data.length; i++) {
+                for (int i = 0; i < idx && i < data.length; i++) {
                     subSum += data[i];
                 }
-                sel = (double)subSum / sum;
+                if (idx >= 0 && idx < data.length)
+                    subSum += data[idx] * (double) (v % bucketLen + 1) / bucketLen;
+                sel = (double) subSum / sum;
             }
             case GREATER_THAN -> {
                 for (int i = Math.max(idx + 1, 0); i < data.length; i++) {
                     subSum += data[i];
                 }
-                sel = (double)subSum / sum;
+                if (idx >= 0 && idx < data.length)
+                    subSum += data[idx] * (double) (bucketLen - v % bucketLen - 1) / bucketLen;
+                sel = (double) subSum / sum;
             }
             case GREATER_THAN_OR_EQ -> {
-                for (int i = Math.max(idx, 0); i < data.length; i++) {
+                for (int i = Math.max(idx + 1, 0); i < data.length; i++) {
                     subSum += data[i];
                 }
-                sel = (double)subSum / sum;
+                if (idx >= 0 && idx < data.length)
+                    subSum += data[idx] * (double) (bucketLen - v % bucketLen) / bucketLen;
+                sel = (double) subSum / sum;
             }
         }
         return sel;
