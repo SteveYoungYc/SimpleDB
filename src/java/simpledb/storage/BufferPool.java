@@ -12,6 +12,7 @@ import java.io.*;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -101,7 +102,7 @@ public class BufferPool {
             while (!lockManager.acquireSharedLock(tid, pid)) {
                 try {
                     Thread.sleep(10);
-                } catch (InterruptedException e) {
+                } catch (InterruptedException ignored) {
 
                 }
             }
@@ -109,7 +110,7 @@ public class BufferPool {
             while (!lockManager.acquireExclusiveLock(tid, pid)) {
                 try {
                     Thread.sleep(10);
-                } catch (InterruptedException e) {
+                } catch (InterruptedException ignored) {
 
                 }
             }
@@ -151,7 +152,7 @@ public class BufferPool {
      */
     public void transactionComplete(TransactionId tid) {
         // some code goes here
-        lockManager.releaseAll(tid);
+        transactionComplete(tid, true);
     }
 
     /**
@@ -171,7 +172,26 @@ public class BufferPool {
      */
     public void transactionComplete(TransactionId tid, boolean commit) {
         // some code goes here
-        // not necessary for lab1|lab2
+        lockManager.releaseAll(tid);
+        if (commit) {
+            try {
+                flushPages(tid);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        } else {    // discard and reread
+            for (Page page : pages.values()) {
+                if (tid == page.isDirty()) {
+                    PageId pid = page.getId();
+                    discardPage(pid);
+                    DbFile dbfile = Database.getCatalog().getDatabaseFile(pid.getTableId());
+                    Page oldPage = dbfile.readPage(pid);
+                    oldPage.markDirty(false, tid);
+                    pages.put(pid.hashCode(), oldPage);
+                    queue.add(pid.hashCode());
+                }
+            }
+        }
     }
 
     /**
@@ -196,9 +216,17 @@ public class BufferPool {
         HeapFile heapFile = (HeapFile) Database.getCatalog().getDatabaseFile(tableId);
         list = (ArrayList<Page>) heapFile.insertTuple(tid, t);
         for (Page p : list) {
-            if (pages.size() >= numPages)
-                evictPage();
+            if (!pages.containsKey(p.getId().hashCode()))
+                throw new DbException("No such page");
+            pages.remove(p.getId().hashCode());     // TODO: Maybe we don't need to remove and add.
+            for (int i = 0; i < queue.size(); i++) {
+                if (queue.get(i) == p.getId().hashCode()) {
+                    queue.remove(i);
+                    break;
+                }
+            }
             pages.put(p.getId().hashCode(), p);
+            queue.add(p.getId().hashCode());
         }
     }
 
@@ -223,9 +251,17 @@ public class BufferPool {
         HeapFile heapFile = (HeapFile) Database.getCatalog().getDatabaseFile(tableId);
         list = heapFile.deleteTuple(tid, t);
         for (Page p : list) {
-            if (pages.size() >= numPages)
-                evictPage();
+            if (!pages.containsKey(p.getId().hashCode()))
+                throw new DbException("No such page");
+            pages.remove(p.getId().hashCode());
+            for (int i = 0; i < queue.size(); i++) {
+                if (queue.get(i) == p.getId().hashCode()) {
+                    queue.remove(i);
+                    break;
+                }
+            }
             pages.put(p.getId().hashCode(), p);
+            queue.add(p.getId().hashCode());
         }
     }
 
@@ -251,7 +287,12 @@ public class BufferPool {
     public synchronized void discardPage(PageId pid) {
         // some code goes here
         pages.remove(pid.hashCode());
-        queue.remove(pid.hashCode());
+        for (int i = 0; i < queue.size(); i++) {
+            if (queue.get(i) == pid.hashCode()) {
+                queue.remove(i);
+                return;
+            }
+        }
     }
 
     /**
@@ -264,7 +305,12 @@ public class BufferPool {
         DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
         file.writePage(pages.get(pid.hashCode()));
         pages.remove(pid.hashCode());
-        queue.remove(pid.hashCode());
+        for (int i = 0; i < queue.size(); i++) {
+            if (queue.get(i) == pid.hashCode()) {
+                queue.remove(i);
+                return;
+            }
+        }
     }
 
     /**
@@ -272,7 +318,11 @@ public class BufferPool {
      */
     public synchronized void flushPages(TransactionId tid) throws IOException {
         // some code goes here
-        // not necessary for lab1|lab2
+        for (Page page : pages.values()) {
+            if (tid == page.isDirty()) {
+                flushPage(page.getId());
+            }
+        }
     }
 
     /**
@@ -281,16 +331,20 @@ public class BufferPool {
      */
     private synchronized void evictPage() throws DbException {
         // some code goes here
-        Optional<Integer> key;
         if (pages.isEmpty()) {
             throw new DbException("No page, can not evict!");
         }
         if (pages.size() >= numPages) {
-            key = queue.stream().findFirst();
-            if (key.isPresent()) {
-                pages.remove(key.get());
-                queue.remove(key.get());
+            for (int idx = 0; idx < queue.size(); idx++) {
+                Page page = pages.get(queue.get(idx));
+                if (page.isDirty() != null) {
+                    continue;
+                }
+                pages.remove(queue.get(idx));
+                queue.remove(idx);
+                return;
             }
+            throw new DbException("All the pages are dirty!");
         }
     }
 

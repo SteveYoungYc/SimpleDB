@@ -7,7 +7,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class LockManager {
-
+    // TODO: Is there any more efficient way to store the meta data?
     private final HashMap<Integer, Set<Integer>> sharedLockSets;
     private final HashMap<Integer, Set<Integer>> exclusiveLockSets;
 
