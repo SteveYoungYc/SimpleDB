@@ -4,6 +4,7 @@ import simpledb.common.Database;
 import simpledb.common.Permissions;
 import simpledb.common.DbException;
 import simpledb.common.DeadlockException;
+import simpledb.transaction.LockManager;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
@@ -42,6 +43,7 @@ public class BufferPool {
     private final int numPages;
     private final ConcurrentHashMap<Integer, Page> pages;
     private final ArrayList<Integer> queue;
+    public final LockManager lockManager;
 
     /**
      * Creates a BufferPool that caches up to numPages pages.
@@ -53,6 +55,7 @@ public class BufferPool {
         this.numPages = numPages;
         pages = new ConcurrentHashMap<>();
         queue = new ArrayList<>();
+        lockManager = new LockManager();
     }
 
     public static int getPageSize() {
@@ -69,6 +72,13 @@ public class BufferPool {
         BufferPool.pageSize = DEFAULT_PAGE_SIZE;
     }
 
+    public void upgradeLock(TransactionId tid, PageId pid) {
+        lockManager.upgrade(tid, pid);
+    }
+
+    public void releaseSharedLock(TransactionId tid, PageId pid) {
+        lockManager.releaseSharedLock(tid, pid);
+    }
     /**
      * Retrieve the specified page with the associated permissions.
      * Will acquire a lock and may block if that lock is held by another
@@ -87,6 +97,23 @@ public class BufferPool {
     public Page getPage(TransactionId tid, PageId pid, Permissions perm)
             throws TransactionAbortedException, DbException {
         // some code goes here
+        if (perm == Permissions.READ_ONLY) {
+            while (!lockManager.acquireSharedLock(tid, pid)) {
+                try {
+                    Thread.sleep(10);
+                } catch (InterruptedException e) {
+
+                }
+            }
+        } else {
+            while (!lockManager.acquireExclusiveLock(tid, pid)) {
+                try {
+                    Thread.sleep(10);
+                } catch (InterruptedException e) {
+
+                }
+            }
+        }
         Page page;
         if (!pages.containsKey(pid.hashCode())) {
             if (pages.size() >= numPages)
@@ -113,7 +140,8 @@ public class BufferPool {
      */
     public void unsafeReleasePage(TransactionId tid, PageId pid) {
         // some code goes here
-        // not necessary for lab1|lab2
+        lockManager.releaseSharedLock(tid, pid);
+        lockManager.releaseExclusiveLock(tid, pid);
     }
 
     /**
@@ -123,7 +151,7 @@ public class BufferPool {
      */
     public void transactionComplete(TransactionId tid) {
         // some code goes here
-        // not necessary for lab1|lab2
+        lockManager.releaseAll(tid);
     }
 
     /**
@@ -131,8 +159,7 @@ public class BufferPool {
      */
     public boolean holdsLock(TransactionId tid, PageId p) {
         // some code goes here
-        // not necessary for lab1|lab2
-        return false;
+        return lockManager.isLocked(tid, p);
     }
 
     /**

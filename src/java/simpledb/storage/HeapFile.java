@@ -4,6 +4,7 @@ import simpledb.common.Database;
 import simpledb.common.DbException;
 import simpledb.common.Debug;
 import simpledb.common.Permissions;
+import simpledb.transaction.LockManager;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
@@ -24,7 +25,7 @@ public class HeapFile implements DbFile {
 
     private final File file;
     private final TupleDesc td;
-    private int pageNum;
+    private final LockManager lockManager;
 
     /**
      * Constructs a heap file backed by the specified file.
@@ -36,6 +37,7 @@ public class HeapFile implements DbFile {
         // some code goes here
         this.file = f;
         this.td = td;
+        this.lockManager = Database.getBufferPool().lockManager;
     }
 
     /**
@@ -136,13 +138,15 @@ public class HeapFile implements DbFile {
         ArrayList<Page> list = new ArrayList<>();
         for (pgNo = 0; pgNo < numPages; pgNo++) {
             pageId = new HeapPageId(getId(), pgNo);
-            page = (HeapPage) Database.getBufferPool().getPage(tid, pageId, Permissions.READ_WRITE);
+            page = (HeapPage) Database.getBufferPool().getPage(tid, pageId, Permissions.READ_ONLY);
             if (page.getNumEmptySlots() > 0) {
+                Database.getBufferPool().upgradeLock(tid, page.getId());
                 page.insertTuple(t);
                 page.markDirty(true, tid);
                 list.add(page);
                 break;
             }
+            Database.getBufferPool().releaseSharedLock(tid, page.getId());
         }
         if(list.isEmpty()) {
             pageId = new HeapPageId(getId(), pgNo);
@@ -209,7 +213,7 @@ public class HeapFile implements DbFile {
                     detector = 1;
                     while (pgNo + detector < numPages) {
                         pageId = new HeapPageId(getId(), pgNo + detector);
-                        nextPage = (HeapPage) Database.getBufferPool().getPage(tid, pageId, Permissions.READ_WRITE);
+                        nextPage = (HeapPage) Database.getBufferPool().getPage(tid, pageId, Permissions.READ_ONLY);
                         it = nextPage.iterator();
                         if (it.hasNext()) {
                             switchPage = true;
