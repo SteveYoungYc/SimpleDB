@@ -1,28 +1,74 @@
 package simpledb.transaction;
 
+import simpledb.common.Database;
 import simpledb.storage.PageId;
 
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class LockManager {
     // TODO: Is there any more efficient way to store the meta data?
-    private final HashMap<Integer, Set<Integer>> sharedLockSets;
-    private final HashMap<Integer, Set<Integer>> exclusiveLockSets;
+    private final ConcurrentHashMap<Integer, Set<Integer>> sharedLockSets;
+    private final ConcurrentHashMap<Integer, Set<Integer>> exclusiveLockSets;
+    private final ConcurrentHashMap<Integer, Set<Integer>> graph;
+    private final ConcurrentHashMap<Integer, Integer> vertices;
+    private int v;
 
     public LockManager() {
-        this.exclusiveLockSets = new HashMap<>();
-        this.sharedLockSets = new HashMap<>();
+        this.exclusiveLockSets = new ConcurrentHashMap<>();
+        this.sharedLockSets = new ConcurrentHashMap<>();
+        this.graph = new ConcurrentHashMap<>();
+        this.vertices = new ConcurrentHashMap<>();
+        this.v = 0;
     }
 
-    public boolean acquireSharedLock(TransactionId tid, PageId pid) {
+    /**
+     * Add to the dependency graph and detect if there is a loop in the graph
+     *
+     * @param tid1 the txn that wants to acquire a lock
+     * @param tranHash2 the txn that holds the lock
+     */
+    private synchronized void addToGraph(TransactionId tid1, int tranHash2) throws TransactionAbortedException {
+        int tranHash1 = tid1.hashCode();
+        Set<Integer> set;
+        if (graph.containsKey(tranHash1)) {
+            set = graph.get(tranHash1);
+            set.add(tranHash2);
+        } else {
+            set = new HashSet<>();
+            set.add(tranHash2);
+            graph.put(tranHash1, set);
+        }
+        if (!vertices.containsKey(tranHash1)) {
+            vertices.put(tranHash1, v);
+            v++;
+        }
+        if (!vertices.containsKey(tranHash2)) {
+            vertices.put(tranHash2, v);
+            v++;
+        }
+        Digraph digraph = new Digraph(v);
+        for (int t1 : graph.keySet()) {
+            for (int t2 : graph.get(t1)) {
+                digraph.addEdge(vertices.get(t1), vertices.get(t2));
+            }
+        }
+        DirectedCycle directedCycle = new DirectedCycle(digraph);
+        if (directedCycle.hasCycle()) {
+            Database.getBufferPool().transactionComplete(tid1, false);
+            throw new TransactionAbortedException();
+        }
+    }
+
+    public synchronized boolean acquireSharedLock(TransactionId tid, PageId pid) throws TransactionAbortedException {
         Set<Integer> set;
         int tranHash = tid.hashCode();
         int pageHash = pid.hashCode();
 
         for (int key : exclusiveLockSets.keySet()) {
             if (exclusiveLockSets.get(key).contains(pageHash) && key != tranHash) {
+                addToGraph(tid, key);
                 return false;
             }
         }
@@ -37,18 +83,20 @@ public class LockManager {
         return true;
     }
 
-    public boolean acquireExclusiveLock(TransactionId tid, PageId pid) {
+    public synchronized boolean acquireExclusiveLock(TransactionId tid, PageId pid) throws TransactionAbortedException {
         Set<Integer> set;
         int tranHash = tid.hashCode();
         int pageHash = pid.hashCode();
 
         for (int key : sharedLockSets.keySet()) {
             if (sharedLockSets.get(key).contains(pageHash) && key != tranHash) {
+                addToGraph(tid, key);
                 return false;
             }
         }
         for (int key : exclusiveLockSets.keySet()) {
             if (exclusiveLockSets.get(key).contains(pageHash) && key != tranHash) {
+                addToGraph(tid, key);
                 return false;
             }
         }
