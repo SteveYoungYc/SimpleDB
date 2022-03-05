@@ -186,7 +186,47 @@ public class BTreeFile implements DbFile {
                                        Field f)
             throws DbException, TransactionAbortedException {
         // some code goes here
-        return null;
+        if (pid.pgcateg() == BTreePageId.LEAF) {
+            return (BTreeLeafPage) Database.getBufferPool().getPage(tid, pid, perm);
+        } else {
+            BTreeInternalPage internalPage = (BTreeInternalPage) getPage(tid, dirtypages, pid, Permissions.READ_ONLY);
+            Iterator<BTreeEntry> it = internalPage.iterator();
+            BTreeEntry entry = null, lastEntry;
+            boolean flag;
+            while (it.hasNext()) {
+                if (f != null) {
+                    lastEntry = entry;
+                    if (lastEntry != null) {
+                        flag = f.compare(Op.GREATER_THAN, lastEntry.getKey());
+                    } else {
+                        flag = true;
+                    }
+                    entry = it.next();
+                    if (flag && f.compare(Op.LESS_THAN_OR_EQ, entry.getKey())) {
+                        BTreePageId pageId = entry.getLeftChild();
+                        return findLeafPage(tid, dirtypages, pageId, getPerm(pageId, perm), f);
+                    }
+                } else {
+                    entry = it.next();
+                    BTreePageId pageId = entry.getLeftChild();
+                    return findLeafPage(tid, dirtypages, pageId, getPerm(pageId, perm), null);
+                }
+            }
+            assert entry != null;
+            BTreePageId pageId = entry.getRightChild();
+            return findLeafPage(tid, dirtypages, pageId, getPerm(pageId, perm), f);
+        }
+    }
+
+    private Permissions getPerm(BTreePageId pageId, Permissions perm) throws DbException {
+        Permissions p;
+        if (pageId.pgcateg() == BTreePageId.LEAF)
+            p = perm;
+        else if (pageId.pgcateg() == BTreePageId.INTERNAL)
+            p = Permissions.READ_ONLY;
+        else
+            throw new DbException("");
+        return p;
     }
 
     /**
