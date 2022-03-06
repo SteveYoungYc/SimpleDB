@@ -193,6 +193,8 @@ public class BTreeFile implements DbFile {
             Iterator<BTreeEntry> it = internalPage.iterator();
             BTreeEntry entry = null, lastEntry;
             boolean flag;
+            if (!it.hasNext())
+                throw new DbException("It doesn't have next!");
             while (it.hasNext()) {
                 if (f != null) {
                     lastEntry = entry;
@@ -275,8 +277,41 @@ public class BTreeFile implements DbFile {
         // the new entry.  getParentWithEmtpySlots() will be useful here.  Don't forget to update
         // the sibling pointers of all the affected leaf pages.  Return the page into which a
         // tuple with the given key field should be inserted.
-        return null;
+        BTreeLeafPage newPage = (BTreeLeafPage) getEmptyPage(tid, dirtypages, BTreePageId.LEAF);
+        int rightHalfNum = page.getNumTuples() - page.getNumTuples() / 2;
+        int step = 0;
+        Tuple tuple = null;
+        Iterator<Tuple> it = page.reverseIterator();
+        while (it.hasNext() && step < rightHalfNum) {
+            step++;
+            tuple = it.next();
+            page.deleteTuple(tuple);
+            newPage.insertTuple(tuple);
+        }
+        dirtypages.put(page.getId(), page);
+        dirtypages.put(newPage.getId(), newPage);
+        assert tuple != null;
+        Field fieldCpy = tuple.getField(keyField);
+        BTreeInternalPage internalPage = getParentWithEmptySlots(tid, dirtypages, page.getParentId(), fieldCpy);
 
+        BTreeEntry entry = new BTreeEntry(fieldCpy, page.getId(), newPage.getId());
+        internalPage.insertEntry(entry);
+        internalPage.updateEntry(entry);
+        dirtypages.put(internalPage.getId(), internalPage);
+        updateParentPointers(tid, dirtypages, internalPage);
+
+        if (page.getRightSiblingId() != null) {
+            BTreeLeafPage leafPage = (BTreeLeafPage) getPage(tid, dirtypages, page.getRightSiblingId(), Permissions.READ_ONLY);
+            leafPage.setLeftSiblingId(newPage.getId());
+        }
+        newPage.setRightSiblingId(page.getRightSiblingId());
+        newPage.setLeftSiblingId(page.getId());
+        page.setRightSiblingId(newPage.getId());
+
+        if (field.compare(Op.LESS_THAN, fieldCpy))
+            return page;
+        else
+            return newPage;
     }
 
     /**
@@ -312,7 +347,42 @@ public class BTreeFile implements DbFile {
         // the parent pointers of all the children moving to the new page.  updateParentPointers()
         // will be useful here.  Return the page into which an entry with the given key field
         // should be inserted.
-        return null;
+        BTreeInternalPage newPage = (BTreeInternalPage) getEmptyPage(tid, dirtypages, BTreePageId.INTERNAL);
+        int rightHalfNum = page.getNumEntries() / 2;
+        int step = 0;
+        BTreeEntry entry = null;
+        Iterator<BTreeEntry> it = page.reverseIterator();
+        while (it.hasNext() && step < rightHalfNum) {
+            step++;
+            entry = it.next();
+            page.deleteKeyAndRightChild(entry);
+            newPage.insertEntry(entry);
+            newPage.updateEntry(entry);
+        }
+        if (it.hasNext()) {
+            entry = it.next();
+            page.deleteKeyAndRightChild(entry);
+        }
+        dirtypages.put(page.getId(), page);
+        dirtypages.put(newPage.getId(), newPage);
+        updateParentPointers(tid, dirtypages, page);
+        updateParentPointers(tid, dirtypages, newPage);
+        assert entry != null;
+        Field fieldPush = entry.getKey();
+        BTreeInternalPage internalPage = getParentWithEmptySlots(tid, dirtypages, page.getParentId(), fieldPush);
+
+        BTreeEntry newEntry = new BTreeEntry(fieldPush, page.getId(), newPage.getId());
+        internalPage.insertEntry(newEntry);
+        internalPage.updateEntry(newEntry);
+        dirtypages.put(internalPage.getId(), internalPage);
+        updateParentPointers(tid, dirtypages, internalPage);
+
+        if (field.compare(Op.LESS_THAN, fieldPush))
+            return page;
+        else if (field.compare(Op.EQUALS, fieldPush))
+            return internalPage;
+        else
+            return newPage;
     }
 
     /**

@@ -10,10 +10,7 @@ import simpledb.transaction.TransactionId;
 
 import java.io.*;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -213,20 +210,27 @@ public class BufferPool {
             throws DbException, IOException, TransactionAbortedException {
         // some code goes here
         ArrayList<Page> list;
-        HeapFile heapFile = (HeapFile) Database.getCatalog().getDatabaseFile(tableId);
-        list = (ArrayList<Page>) heapFile.insertTuple(tid, t);
+        DbFile file = Database.getCatalog().getDatabaseFile(tableId);
+        list = (ArrayList<Page>) file.insertTuple(tid, t);
+        assert pages.size() == queue.size();
         for (Page p : list) {
-            if (!pages.containsKey(p.getId().hashCode()))
-                throw new DbException("No such page");
-            pages.remove(p.getId().hashCode());     // TODO: Maybe we don't need to remove and add.
-            for (int i = 0; i < queue.size(); i++) {
-                if (queue.get(i) == p.getId().hashCode()) {
-                    queue.remove(i);
-                    break;
+            if (pages.containsKey(p.getId().hashCode())) {
+                int i;
+                for (i = 0; i < queue.size(); i++) {
+                    if (queue.get(i) == p.getId().hashCode()) {
+                        queue.remove(i);
+                        queue.add(p.getId().hashCode());
+                        break;
+                    }
                 }
+                if (i == queue.size())
+                    throw new DbException("Queue is not right");
+            } else {
+                if (pages.size() >= numPages)
+                    evictPage();
+                pages.put(p.getId().hashCode(), p);
+                queue.add(p.getId().hashCode());
             }
-            pages.put(p.getId().hashCode(), p);
-            queue.add(p.getId().hashCode());
         }
     }
 
@@ -246,9 +250,9 @@ public class BufferPool {
     public void deleteTuple(TransactionId tid, Tuple t)
             throws DbException, IOException, TransactionAbortedException {
         // some code goes here
-        ArrayList<Page> list;
+        List<Page> list;
         int tableId = t.getRecordId().getPageId().getTableId();
-        HeapFile heapFile = (HeapFile) Database.getCatalog().getDatabaseFile(tableId);
+        DbFile heapFile = Database.getCatalog().getDatabaseFile(tableId);
         list = heapFile.deleteTuple(tid, t);
         for (Page p : list) {
             if (!pages.containsKey(p.getId().hashCode()))
@@ -334,18 +338,17 @@ public class BufferPool {
         if (pages.isEmpty()) {
             throw new DbException("No page, can not evict!");
         }
-        if (pages.size() >= numPages) {
-            for (int idx = 0; idx < queue.size(); idx++) {
-                Page page = pages.get(queue.get(idx));
-                if (page.isDirty() != null) {
-                    continue;
-                }
-                pages.remove(queue.get(idx));
-                queue.remove(idx);
-                return;
+        assert pages.size() == queue.size();
+        for (int idx = 0; idx < queue.size(); idx++) {
+            Page page = pages.get(queue.get(idx));
+            if (page.isDirty() != null) {
+                continue;
             }
-            throw new DbException("All the pages are dirty!");
+            pages.remove(queue.get(idx));
+            queue.remove(idx);
+            return;
         }
+        throw new DbException("All the pages are dirty!");
     }
 
 }
