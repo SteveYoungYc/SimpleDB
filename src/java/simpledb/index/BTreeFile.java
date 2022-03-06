@@ -298,7 +298,8 @@ public class BTreeFile implements DbFile {
         internalPage.insertEntry(entry);
         internalPage.updateEntry(entry);
         dirtypages.put(internalPage.getId(), internalPage);
-        updateParentPointers(tid, dirtypages, internalPage);
+        updateParentPointer(tid, dirtypages, internalPage.getId(), page.getId());
+        updateParentPointer(tid, dirtypages, internalPage.getId(), newPage.getId());
 
         if (page.getRightSiblingId() != null) {
             BTreeLeafPage leafPage = (BTreeLeafPage) getPage(tid, dirtypages, page.getRightSiblingId(), Permissions.READ_ONLY);
