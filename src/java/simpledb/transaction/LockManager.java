@@ -111,7 +111,7 @@ public class LockManager {
         return true;
     }
 
-    public void releaseSharedLock(TransactionId tid, PageId pid) {
+    public synchronized void releaseSharedLock(TransactionId tid, PageId pid) {
         Set<Integer> set;
         int tranHash = tid.hashCode();
         int pageHash = pid.hashCode();
@@ -125,7 +125,7 @@ public class LockManager {
             sharedLockSets.remove(tranHash);
     }
 
-    public void releaseExclusiveLock(TransactionId tid, PageId pid) {
+    public synchronized void releaseExclusiveLock(TransactionId tid, PageId pid) {
         Set<Integer> set;
         int tranHash = tid.hashCode();
         int pageHash = pid.hashCode();
@@ -145,7 +145,7 @@ public class LockManager {
         exclusiveLockSets.remove(tranHash);
     }
 
-    public void upgrade(TransactionId tid, PageId pid) {
+    public synchronized void upgrade(TransactionId tid, PageId pid) {
         Set<Integer> set;
         int tranHash = tid.hashCode();
         int pageHash = pid.hashCode();
@@ -160,9 +160,30 @@ public class LockManager {
         }
     }
 
-    public boolean isLocked(TransactionId tid, PageId pid) {
+    public synchronized boolean isLocked(TransactionId tid, PageId pid) {
         boolean lockedBySharedLock = sharedLockSets.get(tid.hashCode()).contains(pid.hashCode());
         boolean lockedByExclusiveLock = exclusiveLockSets.get(tid.hashCode()).contains(pid.hashCode());
         return lockedBySharedLock || lockedByExclusiveLock;
+    }
+
+    public synchronized boolean isLocked(PageId pid) {
+        for (Set<Integer> set : sharedLockSets.values()) {
+            if (set.contains(pid.hashCode()))
+                return true;
+        }
+        for (Set<Integer> set : exclusiveLockSets.values()) {
+            if (set.contains(pid.hashCode()))
+                return true;
+        }
+        return false;
+    }
+
+    public synchronized void release(PageId pid) {
+        for (Set<Integer> set : sharedLockSets.values()) {
+            set.remove(pid.hashCode());
+        }
+        for (Set<Integer> set : exclusiveLockSets.values()) {
+            set.remove(pid.hashCode());
+        }
     }
 }

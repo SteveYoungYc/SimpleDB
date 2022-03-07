@@ -1,16 +1,16 @@
 package simpledb.storage;
 
 import simpledb.common.Database;
-import simpledb.common.Permissions;
 import simpledb.common.DbException;
-import simpledb.common.DeadlockException;
+import simpledb.common.Permissions;
 import simpledb.transaction.LockManager;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
-import java.io.*;
-
-import java.util.*;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -40,8 +40,8 @@ public class BufferPool {
     public static final int DEFAULT_PAGES = 50;
     private final int numPages;
     private final ConcurrentHashMap<Integer, Page> pages;
-    private final ArrayList<Integer> queue;
     public final LockManager lockManager;
+    private final LRUReplacer replacer;
 
     /**
      * Creates a BufferPool that caches up to numPages pages.
@@ -52,8 +52,8 @@ public class BufferPool {
         // some code goes here
         this.numPages = numPages;
         pages = new ConcurrentHashMap<>();
-        queue = new ArrayList<>();
         lockManager = new LockManager();
+        replacer = new LRUReplacer(numPages);
     }
 
     public static int getPageSize() {
@@ -120,7 +120,7 @@ public class BufferPool {
             page = dbfile.readPage(pid);
             page.markDirty(false, tid);
             pages.put(pid.hashCode(), page);
-            queue.add(pid.hashCode());
+            replacer.add(pid.hashCode());
         } else {
             page = pages.get(pid.hashCode());
         }
@@ -185,7 +185,7 @@ public class BufferPool {
                     Page oldPage = dbfile.readPage(pid);
                     oldPage.markDirty(false, tid);
                     pages.put(pid.hashCode(), oldPage);
-                    queue.add(pid.hashCode());
+                    replacer.add(pid.hashCode());
                 }
             }
         }
@@ -212,24 +212,14 @@ public class BufferPool {
         ArrayList<Page> list;
         DbFile file = Database.getCatalog().getDatabaseFile(tableId);
         list = (ArrayList<Page>) file.insertTuple(tid, t);
-        assert pages.size() == queue.size();
         for (Page p : list) {
             if (pages.containsKey(p.getId().hashCode())) {
-                int i;
-                for (i = 0; i < queue.size(); i++) {
-                    if (queue.get(i) == p.getId().hashCode()) {
-                        queue.remove(i);
-                        queue.add(p.getId().hashCode());
-                        break;
-                    }
-                }
-                if (i == queue.size())
-                    throw new DbException("Queue is not right");
+                replacer.update(p.getId().hashCode());
             } else {
                 if (pages.size() >= numPages)
                     evictPage();
                 pages.put(p.getId().hashCode(), p);
-                queue.add(p.getId().hashCode());
+                replacer.add(p.getId().hashCode());
             }
         }
     }
@@ -254,24 +244,14 @@ public class BufferPool {
         int tableId = t.getRecordId().getPageId().getTableId();
         DbFile file = Database.getCatalog().getDatabaseFile(tableId);
         list = file.deleteTuple(tid, t);
-        assert pages.size() == queue.size();
         for (Page p : list) {
             if (pages.containsKey(p.getId().hashCode())) {
-                int i;
-                for (i = 0; i < queue.size(); i++) {
-                    if (queue.get(i) == p.getId().hashCode()) {
-                        queue.remove(i);
-                        queue.add(p.getId().hashCode());
-                        break;
-                    }
-                }
-                if (i == queue.size())
-                    throw new DbException("Queue is not right");
+                replacer.update(p.getId().hashCode());
             } else {
                 if (pages.size() >= numPages)
                     evictPage();
                 pages.put(p.getId().hashCode(), p);
-                queue.add(p.getId().hashCode());
+                replacer.add(p.getId().hashCode());
             }
         }
     }
@@ -283,7 +263,9 @@ public class BufferPool {
      */
     public synchronized void flushAllPages() throws IOException {
         // some code goes here
-
+        for (Page page : pages.values()) {
+            flushPage(page.getId());
+        }
     }
 
     /**
@@ -298,12 +280,7 @@ public class BufferPool {
     public synchronized void discardPage(PageId pid) {
         // some code goes here
         pages.remove(pid.hashCode());
-        for (int i = 0; i < queue.size(); i++) {
-            if (queue.get(i) == pid.hashCode()) {
-                queue.remove(i);
-                return;
-            }
-        }
+        replacer.remove(pid.hashCode());
     }
 
     /**
@@ -316,12 +293,7 @@ public class BufferPool {
         DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
         file.writePage(pages.get(pid.hashCode()));
         pages.remove(pid.hashCode());
-        for (int i = 0; i < queue.size(); i++) {
-            if (queue.get(i) == pid.hashCode()) {
-                queue.remove(i);
-                return;
-            }
-        }
+        replacer.remove(pid.hashCode());
     }
 
     /**
@@ -346,16 +318,15 @@ public class BufferPool {
             throw new DbException("No page, can not evict!");
         }
         if (pages.size() >= numPages) {
-            for (int idx = 0; idx < queue.size(); idx++) {
-                Page page = pages.get(queue.get(idx));
-                if (page.isDirty() != null) {
-                    continue;
-                }
-                pages.remove(queue.get(idx));
-                queue.remove(idx);
-                return;
+            Optional<Integer> pageEvict = replacer.evict(pages);
+            if (pageEvict.isPresent()) {
+//                if (lockManager.isLocked(pages.get(pageEvict.get()).getId())) {
+//                    lockManager.release(pages.get(pageEvict.get()).getId());
+//                }
+                pages.remove(pageEvict.get());
+            } else {
+                throw new DbException("All the pages are dirty!");
             }
-            throw new DbException("All the pages are dirty!");
         }
     }
 
