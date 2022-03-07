@@ -169,7 +169,6 @@ public class BufferPool {
      */
     public void transactionComplete(TransactionId tid, boolean commit) {
         // some code goes here
-        lockManager.releaseAll(tid);
         if (commit) {
             try {
                 flushPages(tid);
@@ -189,6 +188,7 @@ public class BufferPool {
                 }
             }
         }
+        lockManager.releaseAll(tid);
     }
 
     /**

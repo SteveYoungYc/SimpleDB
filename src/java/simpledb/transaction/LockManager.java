@@ -141,8 +141,18 @@ public class LockManager {
 
     public void releaseAll(TransactionId tid) {
         int tranHash = tid.hashCode();
-        sharedLockSets.remove(tranHash);
-        exclusiveLockSets.remove(tranHash);
+        if (sharedLockSets.containsKey(tranHash)) {
+            for (int p : sharedLockSets.get(tranHash)) {
+                sharedLockSets.remove(p);
+            }
+            sharedLockSets.remove(tranHash);
+        }
+        if (exclusiveLockSets.containsKey(tranHash)) {
+            for (int p : exclusiveLockSets.get(tranHash)) {
+                exclusiveLockSets.remove(p);
+            }
+            exclusiveLockSets.remove(tranHash);
+        }
     }
 
     public synchronized void upgrade(TransactionId tid, PageId pid) {
@@ -161,8 +171,11 @@ public class LockManager {
     }
 
     public synchronized boolean isLocked(TransactionId tid, PageId pid) {
-        boolean lockedBySharedLock = sharedLockSets.get(tid.hashCode()).contains(pid.hashCode());
-        boolean lockedByExclusiveLock = exclusiveLockSets.get(tid.hashCode()).contains(pid.hashCode());
+        boolean lockedBySharedLock = false, lockedByExclusiveLock = false;
+        if (sharedLockSets.containsKey(tid.hashCode()))
+            lockedBySharedLock = sharedLockSets.get(tid.hashCode()).contains(pid.hashCode());
+        if (exclusiveLockSets.containsKey(tid.hashCode()))
+            lockedByExclusiveLock = exclusiveLockSets.get(tid.hashCode()).contains(pid.hashCode());
         return lockedBySharedLock || lockedByExclusiveLock;
     }
 
