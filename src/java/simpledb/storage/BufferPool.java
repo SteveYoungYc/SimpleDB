@@ -252,20 +252,27 @@ public class BufferPool {
         // some code goes here
         List<Page> list;
         int tableId = t.getRecordId().getPageId().getTableId();
-        DbFile heapFile = Database.getCatalog().getDatabaseFile(tableId);
-        list = heapFile.deleteTuple(tid, t);
+        DbFile file = Database.getCatalog().getDatabaseFile(tableId);
+        list = file.deleteTuple(tid, t);
+        assert pages.size() == queue.size();
         for (Page p : list) {
-            if (!pages.containsKey(p.getId().hashCode()))
-                throw new DbException("No such page");
-            pages.remove(p.getId().hashCode());
-            for (int i = 0; i < queue.size(); i++) {
-                if (queue.get(i) == p.getId().hashCode()) {
-                    queue.remove(i);
-                    break;
+            if (pages.containsKey(p.getId().hashCode())) {
+                int i;
+                for (i = 0; i < queue.size(); i++) {
+                    if (queue.get(i) == p.getId().hashCode()) {
+                        queue.remove(i);
+                        queue.add(p.getId().hashCode());
+                        break;
+                    }
                 }
+                if (i == queue.size())
+                    throw new DbException("Queue is not right");
+            } else {
+                if (pages.size() >= numPages)
+                    evictPage();
+                pages.put(p.getId().hashCode(), p);
+                queue.add(p.getId().hashCode());
             }
-            pages.put(p.getId().hashCode(), p);
-            queue.add(p.getId().hashCode());
         }
     }
 
@@ -338,17 +345,18 @@ public class BufferPool {
         if (pages.isEmpty()) {
             throw new DbException("No page, can not evict!");
         }
-        assert pages.size() == queue.size();
-        for (int idx = 0; idx < queue.size(); idx++) {
-            Page page = pages.get(queue.get(idx));
-            if (page.isDirty() != null) {
-                continue;
+        if (pages.size() >= numPages) {
+            for (int idx = 0; idx < queue.size(); idx++) {
+                Page page = pages.get(queue.get(idx));
+                if (page.isDirty() != null) {
+                    continue;
+                }
+                pages.remove(queue.get(idx));
+                queue.remove(idx);
+                return;
             }
-            pages.remove(queue.get(idx));
-            queue.remove(idx);
-            return;
+            throw new DbException("All the pages are dirty!");
         }
-        throw new DbException("All the pages are dirty!");
     }
 
 }
