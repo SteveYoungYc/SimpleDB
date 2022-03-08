@@ -1,5 +1,6 @@
 package simpledb.storage;
 
+import simpledb.common.Database;
 import simpledb.common.DbException;
 
 import java.util.Optional;
@@ -45,11 +46,23 @@ public class LRUReplacer {
     }
 
     public synchronized Optional<Integer> evict(ConcurrentHashMap<Integer, Page> pages) {
+        int index = 0;
+        boolean first = true;
         for (int p : queue.stream().toList()) {
             if (pages.get(p).isDirty() != null)
                 continue;
-            queue.remove(p);
-            return Optional.of(p);
+            if (first) {
+                first = false;
+                index = p;
+            }
+            if (!Database.getBufferPool().holdsLock(pages.get(p).getId())) {
+                queue.remove(p);
+                return Optional.of(p);
+            }
+        }
+        if (index != 0) {
+            queue.remove(index);
+            return Optional.of(index);
         }
         return Optional.empty();
     }

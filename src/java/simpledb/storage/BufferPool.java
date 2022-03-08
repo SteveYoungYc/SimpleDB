@@ -40,7 +40,7 @@ public class BufferPool {
     public static final int DEFAULT_PAGES = 50;
     private final int numPages;
     private final ConcurrentHashMap<Integer, Page> pages;
-    public final LockManager lockManager;
+    private final LockManager lockManager;
     private final LRUReplacer replacer;
 
     /**
@@ -51,9 +51,9 @@ public class BufferPool {
     public BufferPool(int numPages) {
         // some code goes here
         this.numPages = numPages;
-        pages = new ConcurrentHashMap<>();
-        lockManager = new LockManager();
-        replacer = new LRUReplacer(numPages);
+        this.pages = new ConcurrentHashMap<>();
+        this.lockManager = new LockManager();
+        this.replacer = new LRUReplacer(numPages);
     }
 
     public static int getPageSize() {
@@ -160,6 +160,10 @@ public class BufferPool {
         return lockManager.isLocked(tid, p);
     }
 
+    public boolean holdsLock(PageId p) {
+        return lockManager.isLocked(p);
+    }
+
     /**
      * Commit or abort a given transaction; release all locks associated to
      * the transaction.
@@ -213,6 +217,7 @@ public class BufferPool {
         DbFile file = Database.getCatalog().getDatabaseFile(tableId);
         list = (ArrayList<Page>) file.insertTuple(tid, t);
         for (Page p : list) {
+            p.markDirty(true, tid);
             if (pages.containsKey(p.getId().hashCode())) {
                 replacer.update(p.getId().hashCode());
             } else {
@@ -245,6 +250,7 @@ public class BufferPool {
         DbFile file = Database.getCatalog().getDatabaseFile(tableId);
         list = file.deleteTuple(tid, t);
         for (Page p : list) {
+            p.markDirty(true, tid);
             if (pages.containsKey(p.getId().hashCode())) {
                 replacer.update(p.getId().hashCode());
             } else {
@@ -292,6 +298,7 @@ public class BufferPool {
         // some code goes here
         DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
         file.writePage(pages.get(pid.hashCode()));
+        pages.get(pid.hashCode()).markDirty(false, null);
         pages.remove(pid.hashCode());
         replacer.remove(pid.hashCode());
     }
@@ -320,9 +327,6 @@ public class BufferPool {
         if (pages.size() >= numPages) {
             Optional<Integer> pageEvict = replacer.evict(pages);
             if (pageEvict.isPresent()) {
-//                if (lockManager.isLocked(pages.get(pageEvict.get()).getId())) {
-//                    lockManager.release(pages.get(pageEvict.get()).getId());
-//                }
                 pages.remove(pageEvict.get());
             } else {
                 throw new DbException("All the pages are dirty!");
