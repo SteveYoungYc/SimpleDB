@@ -26,7 +26,7 @@ public class LockManager {
     /**
      * Add to the dependency graph and detect if there is a loop in the graph
      *
-     * @param tid1 the txn that wants to acquire a lock
+     * @param tid1      the txn that wants to acquire a lock
      * @param tranHash2 the txn that holds the lock
      */
     private synchronized void addToGraph(TransactionId tid1, int tranHash2) throws TransactionAbortedException {

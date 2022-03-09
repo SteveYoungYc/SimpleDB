@@ -1,17 +1,20 @@
 package simpledb.index;
 
-import java.io.*;
-import java.util.*;
-
 import simpledb.common.Database;
+import simpledb.common.DbException;
 import simpledb.common.Type;
 import simpledb.common.Utility;
 import simpledb.execution.Predicate.Op;
-import simpledb.common.DbException;
 import simpledb.storage.*;
 import simpledb.transaction.Transaction;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
+
+import java.io.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.List;
 
 /**
  * BTreeFileEncoder reads a comma delimited text file and converts it to

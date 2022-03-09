@@ -11,7 +11,7 @@ import simpledb.storage.TupleDesc;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
-import java.util.*;
+import java.util.NoSuchElementException;
 
 /**
  * BTreeScan is an operator which reads tuples in sorted order

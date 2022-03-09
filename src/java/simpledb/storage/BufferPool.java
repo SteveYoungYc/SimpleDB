@@ -77,6 +77,7 @@ public class BufferPool {
     public void releaseSharedLock(TransactionId tid, PageId pid) {
         lockManager.releaseSharedLock(tid, pid);
     }
+
     /**
      * Retrieve the specified page with the associated permissions.
      * Will acquire a lock and may block if that lock is held by another

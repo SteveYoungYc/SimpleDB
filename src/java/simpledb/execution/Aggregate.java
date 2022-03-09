@@ -6,7 +6,6 @@ import simpledb.storage.Tuple;
 import simpledb.storage.TupleDesc;
 import simpledb.transaction.TransactionAbortedException;
 
-import java.util.Iterator;
 import java.util.NoSuchElementException;
 
 

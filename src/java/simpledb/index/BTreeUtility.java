@@ -1,21 +1,21 @@
 package simpledb.index;
 
+import simpledb.common.Database;
+import simpledb.common.DbException;
+import simpledb.common.Type;
+import simpledb.common.Utility;
+import simpledb.execution.IndexPredicate;
+import simpledb.execution.Predicate.Op;
+import simpledb.storage.*;
+import simpledb.transaction.TransactionAbortedException;
+import simpledb.transaction.TransactionId;
+
 import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
-
-import simpledb.common.Database;
-import simpledb.common.Type;
-import simpledb.common.Utility;
-import simpledb.execution.IndexPredicate;
-import simpledb.execution.Predicate.Op;
-import simpledb.common.DbException;
-import simpledb.storage.*;
-import simpledb.transaction.TransactionAbortedException;
-import simpledb.transaction.TransactionId;
 
 /**
  * Helper methods used for testing and implementing random features.

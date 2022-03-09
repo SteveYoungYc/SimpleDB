@@ -1,17 +1,17 @@
 package simpledb.index;
 
-import java.io.*;
-import java.util.*;
-
 import simpledb.common.Database;
+import simpledb.common.DbException;
+import simpledb.common.Debug;
 import simpledb.common.Permissions;
 import simpledb.execution.IndexPredicate;
 import simpledb.execution.Predicate.Op;
-import simpledb.common.DbException;
-import simpledb.common.Debug;
 import simpledb.storage.*;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
+
+import java.io.*;
+import java.util.*;
 
 /**
  * BTreeFile is an implementation of a DbFile that stores a B+ tree.

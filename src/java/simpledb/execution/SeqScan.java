@@ -1,15 +1,15 @@
 package simpledb.execution;
 
 import simpledb.common.Database;
-import simpledb.transaction.TransactionAbortedException;
-import simpledb.transaction.TransactionId;
-import simpledb.common.Type;
 import simpledb.common.DbException;
+import simpledb.common.Type;
 import simpledb.storage.DbFileIterator;
 import simpledb.storage.Tuple;
 import simpledb.storage.TupleDesc;
+import simpledb.transaction.TransactionAbortedException;
+import simpledb.transaction.TransactionId;
 
-import java.util.*;
+import java.util.NoSuchElementException;
 
 /**
  * SeqScan is an implementation of a sequential scan access method that reads

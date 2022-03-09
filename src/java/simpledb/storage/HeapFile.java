@@ -2,14 +2,17 @@ package simpledb.storage;
 
 import simpledb.common.Database;
 import simpledb.common.DbException;
-import simpledb.common.Debug;
 import simpledb.common.Permissions;
-import simpledb.transaction.LockManager;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
-import java.io.*;
-import java.util.*;
+import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.NoSuchElementException;
 
 /**
  * HeapFile is an implementation of a DbFile that stores a collection of tuples
@@ -146,7 +149,7 @@ public class HeapFile implements DbFile {
             }
             Database.getBufferPool().releaseSharedLock(tid, page.getId());
         }
-        if(list.isEmpty()) {
+        if (list.isEmpty()) {
             pageId = new HeapPageId(getId(), pgNo);
             page = new HeapPage(pageId, HeapPage.createEmptyPageData());
             writePage(page);

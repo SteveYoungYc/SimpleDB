@@ -1,7 +1,7 @@
 package simpledb.index;
 
-import simpledb.common.Permissions;
 import simpledb.common.DbException;
+import simpledb.common.Permissions;
 import simpledb.storage.Field;
 import simpledb.storage.Page;
 import simpledb.storage.PageId;
@@ -9,7 +9,6 @@ import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 

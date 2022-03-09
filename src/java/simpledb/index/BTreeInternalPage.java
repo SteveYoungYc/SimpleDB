@@ -1,18 +1,15 @@
 package simpledb.index;
 
-import java.util.*;
-import java.io.*;
-
-import simpledb.common.Catalog;
-import simpledb.common.Database;
-import simpledb.common.Type;
+import simpledb.common.*;
 import simpledb.execution.Predicate.Op;
-import simpledb.common.DbException;
-import simpledb.common.Debug;
 import simpledb.storage.BufferPool;
 import simpledb.storage.Field;
 import simpledb.storage.IntField;
 import simpledb.storage.RecordId;
+
+import java.io.*;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
 
 /**
  * Each instance of BTreeInternalPage stores data for one page of a BTreeFile and
