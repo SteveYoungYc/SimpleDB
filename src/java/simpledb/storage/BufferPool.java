@@ -296,8 +296,16 @@ public class BufferPool {
      */
     private synchronized void flushPage(PageId pid) throws IOException {
         // some code goes here
+        // append an update record to the log, with
+        // a before-image and after-image.
+        Page p = pages.get(pid.hashCode());
+        TransactionId dirtier = p.isDirty();
+        if (dirtier != null) {
+            Database.getLogFile().logWrite(dirtier, p.getBeforeImage(), p);
+            Database.getLogFile().force();
+        }
         DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
-        file.writePage(pages.get(pid.hashCode()));
+        file.writePage(p);
         pages.get(pid.hashCode()).markDirty(false, null);
         pages.remove(pid.hashCode());
         replacer.remove(pid.hashCode());
@@ -311,6 +319,7 @@ public class BufferPool {
         for (Page page : pages.values()) {
             if (tid == page.isDirty()) {
                 flushPage(page.getId());
+                page.setBeforeImage();
             }
         }
     }

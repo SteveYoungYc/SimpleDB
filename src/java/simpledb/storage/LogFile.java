@@ -140,7 +140,7 @@ public class LogFile {
     public synchronized int getTotalRecords() {
         return totalRecords;
     }
-    
+
     /** Write an abort record to the log for the specified tid, force
         the log to disk, and perform a rollback
         @param tid The aborting transaction.
@@ -460,6 +460,37 @@ public class LogFile {
             synchronized(this) {
                 preAppend();
                 // some code goes here
+                Long offset = tidToFirstLogRecord.get(tid.getId());
+                raf.seek(offset);
+                Set<PageId> pageIdSet = new HashSet<>();
+                while (true) {
+                    try {
+                        int type = raf.readInt();
+                        long tidVal = raf.readLong();
+                        if (type == UPDATE_RECORD) {
+                            Page before = readPageData(raf);
+                            readPageData(raf);
+                            PageId pid = before.getId();
+                            if (tidVal == tid.getId() && !pageIdSet.contains(pid)) {
+                                pageIdSet.add(pid);     // to make sure these pages can roll back to the original version
+                                int tableId = before.getId().getTableId();
+                                DbFile file = Database.getCatalog().getDatabaseFile(tableId);
+                                Database.getBufferPool().discardPage(before.getId());
+                                file.writePage(before);
+                            }
+                        } else if (type == CHECKPOINT_RECORD) {
+                            int numTransactions = raf.readInt();
+                            while (numTransactions-- > 0) {
+                                raf.readLong();
+                                raf.readLong();
+                            }
+                        }
+                        raf.readLong();
+                    } catch (EOFException e) {
+                        break;
+                    }
+                }
+                raf.seek(raf.length());
             }
         }
     }
@@ -478,6 +509,15 @@ public class LogFile {
         }
     }
 
+    private static class Event {
+        public int type;
+        public long offset;
+
+        public Event(long offset) {
+            this.offset = offset;
+        }
+    }
+
     /** Recover the database system by ensuring that the updates of
         committed transactions are installed and that the
         updates of uncommitted transactions are not installed.
@@ -487,8 +527,137 @@ public class LogFile {
             synchronized (this) {
                 recoveryUndecided = false;
                 // some code goes here
+                HashMap<Long, List<Page>> beforePages = new HashMap<>();
+                HashMap<Long, List<Page>> afterPages = new HashMap<>();
+                List<Long> commits = new ArrayList<>();
+                raf.seek(LONG_SIZE);
+                while (true) {
+                    try {
+                        int type = raf.readInt();
+                        long tidVal = raf.readLong();
+                        switch (type) {
+                            case UPDATE_RECORD -> {
+                                Page before = readPageData(raf);
+                                Page after = readPageData(raf);
+                                if (!beforePages.containsKey(tidVal)) {
+                                    beforePages.put(tidVal, new ArrayList<>());
+                                }
+                                if (!afterPages.containsKey(tidVal)) {
+                                    afterPages.put(tidVal, new ArrayList<>());
+                                }
+                                beforePages.get(tidVal).add(before);
+                                afterPages.get(tidVal).add(after);
+                            }
+                            case CHECKPOINT_RECORD -> {
+                                int numTransactions = raf.readInt();
+                                while (numTransactions-- > 0) {
+                                    raf.readLong();
+                                    raf.readLong();
+                                }
+                            }
+                            case COMMIT_RECORD -> {
+                                commits.add(tidVal);
+                            }
+                        }
+                        raf.readLong();
+                    } catch (EOFException e) {
+                        break;
+                    }
+                }
+
+                for (long tid : beforePages.keySet()) {
+                    if (!commits.contains(tid)) {
+                        for (Page page : beforePages.get(tid)) {
+                            Database.getCatalog().getDatabaseFile(page.getId().getTableId()).writePage(page);
+                        }
+                    }
+                }
+
+                for (Long tid : commits) {
+                    if (afterPages.containsKey(tid)) {
+                        List<Page> pages = afterPages.get(tid);
+                        for (Page page : pages) {
+                            Database.getCatalog().getDatabaseFile(page.getId().getTableId()).writePage(page);
+                        }
+                    }
+                }
+                /*
+                // It didn't work when using the checkPoint.
+                HashMap<Long, Event> events = new HashMap<>();
+                raf.seek(0);
+                long checkPoint = raf.readLong();
+                if (checkPoint > 0)
+                    raf.seek(checkPoint);
+                while (true) {
+                    try {
+                        int type = raf.readInt();
+                        long tidVal = raf.readLong();
+                        switch (type) {
+                            case UPDATE_RECORD -> {
+                                Page before = readPageData(raf);
+                                Page after = readPageData(raf);
+                                int tableId = before.getId().getTableId();
+                                DbFile file = Database.getCatalog().getDatabaseFile(tableId);
+                                file.writePage(after);
+                            }
+                            case CHECKPOINT_RECORD -> {
+                                int numTransactions = raf.readInt();
+                                while (numTransactions-- > 0) {
+                                    long tid = raf.readLong();
+                                    long firstRecord = raf.readLong();
+                                    events.put(tid, new Event(firstRecord));
+                                }
+                            }
+                            case COMMIT_RECORD -> {
+                                if (!events.containsKey(tidVal))
+                                    events.put(tidVal, new Event(-1));
+                                events.get(tidVal).type = COMMIT_RECORD;
+                            }
+                            case  ABORT_RECORD -> {
+                                if (!events.containsKey(tidVal))
+                                    events.put(tidVal, new Event(-1));
+                                events.get(tidVal).type = ABORT_RECORD;
+                            }
+                        }
+                        raf.readLong();
+                    } catch (EOFException e) {
+                        break;
+                    }
+                }
+
+                raf.seek(LONG_SIZE);
+                Set<PageId> pageIdSet = new HashSet<>();
+                HashMap<Long, Set<PageId>> sets = new HashMap<>();
+                while (true) {
+                    try {
+                        int type = raf.readInt();
+                        long tidVal = raf.readLong();
+                        if (type == UPDATE_RECORD) {
+                            Page before = readPageData(raf);
+                            readPageData(raf);
+                            PageId pid = before.getId();
+                            if (!pageIdSet.contains(pid)) {
+                                pageIdSet.add(pid);
+                                int tableId = before.getId().getTableId();
+                                DbFile file = Database.getCatalog().getDatabaseFile(tableId);
+                                Database.getBufferPool().discardPage(before.getId());
+                                file.writePage(before);
+                            }
+                        } else if (type == CHECKPOINT_RECORD) {
+                            int numTransactions = raf.readInt();
+                            while (numTransactions-- > 0) {
+                                raf.readLong();
+                                raf.readLong();
+                            }
+                        }
+                        raf.readLong();
+                    } catch (EOFException e) {
+                        break;
+                    }
+                }
+            */
             }
-         }
+        }
     }
 
     /** Print out a human readable represenation of the log */
@@ -508,53 +677,44 @@ public class LogFile {
                 System.out.println((raf.getFilePointer() - LONG_SIZE) + ": TID " + cpTid);
 
                 switch (cpType) {
-                case BEGIN_RECORD:
-                    System.out.println(" (BEGIN)");
-                    System.out.println(raf.getFilePointer() + ": RECORD START OFFSET: " + raf.readLong());
-                    break;
-                case ABORT_RECORD:
-                    System.out.println(" (ABORT)");
-                    System.out.println(raf.getFilePointer() + ": RECORD START OFFSET: " + raf.readLong());
-                    break;
-                case COMMIT_RECORD:
-                    System.out.println(" (COMMIT)");
-                    System.out.println(raf.getFilePointer() + ": RECORD START OFFSET: " + raf.readLong());
-                    break;
-
-                case CHECKPOINT_RECORD:
-                    System.out.println(" (CHECKPOINT)");
-                    int numTransactions = raf.readInt();
-                    System.out.println((raf.getFilePointer() - INT_SIZE) + ": NUMBER OF OUTSTANDING RECORDS: " + numTransactions);
-
-                    while (numTransactions-- > 0) {
-                        long tid = raf.readLong();
-                        long firstRecord = raf.readLong();
-                        System.out.println((raf.getFilePointer() - (LONG_SIZE + LONG_SIZE)) + ": TID: " + tid);
-                        System.out.println((raf.getFilePointer() - LONG_SIZE) + ": FIRST LOG RECORD: " + firstRecord);
+                    case BEGIN_RECORD -> {
+                        System.out.println(" (BEGIN)");
+                        System.out.println(raf.getFilePointer() + ": RECORD START OFFSET: " + raf.readLong());
                     }
-                    System.out.println(raf.getFilePointer() + ": RECORD START OFFSET: " + raf.readLong());
-
-                    break;
-                case UPDATE_RECORD:
-                    System.out.println(" (UPDATE)");
-
-                    long start = raf.getFilePointer();
-                    Page before = readPageData(raf);
-
-                    long middle = raf.getFilePointer();
-                    Page after = readPageData(raf);
-
-                    System.out.println(start + ": before image table id " + before.getId().getTableId());
-                    System.out.println((start + INT_SIZE) + ": before image page number " + before.getId().getPageNumber());
-                    System.out.println((start + INT_SIZE) + " TO " + (middle - INT_SIZE) + ": page data");
-
-                    System.out.println(middle + ": after image table id " + after.getId().getTableId());
-                    System.out.println((middle + INT_SIZE) + ": after image page number " + after.getId().getPageNumber());
-                    System.out.println((middle + INT_SIZE) + " TO " + (raf.getFilePointer()) + ": page data");
-
-                    System.out.println(raf.getFilePointer() + ": RECORD START OFFSET: " + raf.readLong());
-
-                    break;
+                    case ABORT_RECORD -> {
+                        System.out.println(" (ABORT)");
+                        System.out.println(raf.getFilePointer() + ": RECORD START OFFSET: " + raf.readLong());
+                    }
+                    case COMMIT_RECORD -> {
+                        System.out.println(" (COMMIT)");
+                        System.out.println(raf.getFilePointer() + ": RECORD START OFFSET: " + raf.readLong());
+                    }
+                    case CHECKPOINT_RECORD -> {
+                        System.out.println(" (CHECKPOINT)");
+                        int numTransactions = raf.readInt();
+                        System.out.println((raf.getFilePointer() - INT_SIZE) + ": NUMBER OF OUTSTANDING RECORDS: " + numTransactions);
+                        while (numTransactions-- > 0) {
+                            long tid = raf.readLong();
+                            long firstRecord = raf.readLong();
+                            System.out.println((raf.getFilePointer() - (LONG_SIZE + LONG_SIZE)) + ": TID: " + tid);
+                            System.out.println((raf.getFilePointer() - LONG_SIZE) + ": FIRST LOG RECORD: " + firstRecord);
+                        }
+                        System.out.println(raf.getFilePointer() + ": RECORD START OFFSET: " + raf.readLong());
+                    }
+                    case UPDATE_RECORD -> {
+                        System.out.println(" (UPDATE)");
+                        long start = raf.getFilePointer();
+                        Page before = readPageData(raf);
+                        long middle = raf.getFilePointer();
+                        Page after = readPageData(raf);
+                        System.out.println(start + ": before image table id " + before.getId().getTableId());
+                        System.out.println((start + INT_SIZE) + ": before image page number " + before.getId().getPageNumber());
+                        System.out.println((start + INT_SIZE) + " TO " + (middle - INT_SIZE) + ": page data");
+                        System.out.println(middle + ": after image table id " + after.getId().getTableId());
+                        System.out.println((middle + INT_SIZE) + ": after image page number " + after.getId().getPageNumber());
+                        System.out.println((middle + INT_SIZE) + " TO " + (raf.getFilePointer()) + ": page data");
+                        System.out.println(raf.getFilePointer() + ": RECORD START OFFSET: " + raf.readLong());
+                    }
                 }
 
             } catch (EOFException e) {
